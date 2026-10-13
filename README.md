@@ -13,3 +13,5 @@ App de tareas y hábitos con períodos diario / semanal / mensual, historial y e
 - **% cumplido** = períodos cumplidos / períodos transcurridos desde que se creó la tarea (el período en curso solo cuenta si ya está hecho, para no bajar el promedio antes de tiempo).
 - **Racha**: períodos seguidos cumplidos.
 - Mantener apretada una tarea → eliminarla (con confirmación).
+- Menú ☰ → áreas: filtrar por área, con tareas pendientes y totales. Sin filtro, la lista se agrupa por área.
+- Al crear una tarea se sugieren las áreas existentes (evita duplicados como "Salud" y "salud").

@@ -17,6 +17,9 @@ data class TaskUi(
 
 data class CategoryStat(val name: String, val rate: Float)
 
+/** Un área con cuántas tareas tiene y cuántas quedan pendientes en el período actual. */
+data class AreaInfo(val name: String, val total: Int, val pending: Int)
+
 data class StatsReport(
     val globalRate: Float?,
     val doneThisPeriod: Int,
@@ -31,6 +34,10 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _selectedPeriod = MutableStateFlow(PeriodType.DAILY)
     val selectedPeriod: StateFlow<PeriodType> = _selectedPeriod.asStateFlow()
+
+    /** null = todas las áreas */
+    private val _selectedArea = MutableStateFlow<String?>(null)
+    val selectedArea: StateFlow<String?> = _selectedArea.asStateFlow()
 
     /** Se actualiza al volver a la app y una vez por minuto, para detectar el cambio de día. */
     private val _today = MutableStateFlow(LocalDate.now())
@@ -47,9 +54,19 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         tasks.map { buildUi(it, byTask[it.id].orEmpty().toSet(), today) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val currentTasks: StateFlow<List<TaskUi>> = combine(allUi, _selectedPeriod) { list, p ->
-        list.filter { it.task.period == p }
+    val currentTasks: StateFlow<List<TaskUi>> = combine(allUi, _selectedPeriod, _selectedArea) { list, p, area ->
+        list.filter { it.task.period == p && (area == null || it.task.category == area) }
+            .sortedWith(compareBy({ it.task.category }, { it.doneNow }, { it.task.title.lowercase() }))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Áreas existentes (de todas las tareas) con totales, para el menú y las sugerencias. */
+    val areas: StateFlow<List<AreaInfo>> = allUi.map { list ->
+        list.groupBy { it.task.category }
+            .map { (name, items) -> AreaInfo(name, items.size, items.count { !it.doneNow }) }
+            .sortedBy { it.name.lowercase() }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun selectArea(area: String?) { _selectedArea.value = area }
 
     val stats: StateFlow<StatsReport> = allUi.map { calculateStats(it) }
         .stateIn(
@@ -81,7 +98,14 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteTask(task: Task) {
-        viewModelScope.launch { dao.deleteTask(task) }
+        viewModelScope.launch {
+            dao.deleteTask(task)
+            // Si era la última tarea del área filtrada, volver a "Todas".
+            val area = _selectedArea.value
+            if (area != null && allUi.value.none { it.task.category == area && it.task.id != task.id }) {
+                _selectedArea.value = null
+            }
+        }
     }
 
     private fun buildUi(task: Task, keys: Set<String>, today: LocalDate): TaskUi {
